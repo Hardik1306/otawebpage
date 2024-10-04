@@ -1,79 +1,93 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <title>OTA Web BLE</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #1a202c;
-            color: #ffffff;
+        .firmware-row {
+            cursor: pointer;
         }
 
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 10px;
+        .firmware-row:hover {
+            background-color: rgba(75, 85, 99, 0.5);
         }
 
-        .title {
-            text-align: center;
-            margin-bottom: 20px;
+        .firmware-row.selected {
+            background-color: rgba(75, 85, 99, 0.8);
         }
 
-        select,
-        button,
-        input {
-            margin: 5px;
-            padding: 10px;
-            width: 100%;
-            box-sizing: border-box;
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
-        .progress-container {
-            margin-bottom: 20px;
-        }
-
-
-        .log {
-            border: 1px solid #ccc;
-            padding: 10px;
-            height: 200px;
-            overflow-y: auto;
-            margin-top: 20px;
+        .btn-disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
         }
     </style>
 </head>
 
-<body>
-    <div class="container">
-        <h1 class="title">OTA Web BLE</h1>
-        <input type="email" id="emailInput" placeholder="Enter email">
-        <input type="password" id="passwordInput" placeholder="Enter password">
-        <button id="loginBtn">Login</button>
-        <select id="deviceSelect" disabled>
-            <option value="">Select Device</option>
-        </select>
-        <select id="releaseTypeSelect" disabled>
-            <option value="">Select Release Type</option>
-            <option value="main">Main</option>
-            <option value="beta">Beta</option>
-        </select>
-        <select id="firmwareSelect" disabled>
-            <option value="">Select Firmware Version</option>
-        </select>
-        <button id="connectBtn" disabled>Connect BLE</button>
-        <button id="sendBtn" disabled>Update Device</button>
-        <esp-web-install-button>
-            <button slot="activate">Connect Com</button>
-        </esp-web-install-button>
-        <div class="progress-container">
-            <progress id="progressBar" style="width: 100%;height: 30px;margin-bottom: 10px;" max="100"> 32% </progress>
+<body class="bg-gray-900 text-gray-200 min-h-screen">
+    <div class="container mx-auto px-4 py-8 space-y-6">
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-100">OTA Web BLE</h1>
+
+        <div id="loginSection" class="mb-8 space-y-4">
+            <div class="space-y-4">
+                <input type="email" id="emailInput" placeholder="Enter email"
+                    class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-500">
+                <input type="password" id="passwordInput" placeholder="Enter password"
+                    class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-500">
+                <button id="loginBtn"
+                    class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded transition duration-300 ease-in-out">Login</button>
+            </div>
         </div>
-        <div id="log" class="log"></div>
+
+        <div id="mainSection" class="hidden space-y-6">
+            <select id="deviceSelect" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-gray-200"
+                disabled>
+                <option value="">Select Device</option>
+            </select>
+            <div id="firmwareTableContainer" class="overflow-x-auto">
+                <table id="firmwareTable" class="min-w-full bg-gray-800 text-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-2">Date and Time</th>
+                            <th class="px-4 py-2">Firmware Name</th>
+                            <th class="px-4 py-2">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="firmwareTableBody">
+                        <!-- Firmware entries will be dynamically added here -->
+                    </tbody>
+                </table>
+            </div>
+            <button id="connectBtn"
+                class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded transition duration-300 ease-in-out"
+                disabled>Connect BLE</button>
+            <div class="h-1"></div>
+            <esp-web-install-button class="w-full">
+                <button slot="activate"
+                    class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded transition duration-300 ease-in-out">Connect
+                    Com</button>
+            </esp-web-install-button>
+        </div>
+
+        <div class="mt-8 space-y-4">
+            <div class="w-full bg-gray-700 rounded-full h-2.5">
+                <div id="progressBar" class="bg-gray-500 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="log" class="mt-8 bg-gray-800 border border-gray-700 p-4 rounded-lg h-64 overflow-y-auto text-gray-300">
+        </div>
     </div>
     <script>
         const SUPABASE_URL = 'https://ubaebheobfttrysgyjur.supabase.co';
@@ -86,7 +100,7 @@
         let logArea = document.getElementById('log');
         let deviceSelect = document.getElementById('deviceSelect');
         let firmwareSelect = document.getElementById('firmwareSelect');
-        let sendBtn = document.getElementById('sendBtn');
+        let connectBtn = document.getElementById('connectBtn');
         const installButton = document.querySelector('esp-web-install-button');
         let firmwareFiles = {};
         let espcomjson = {
@@ -97,25 +111,17 @@
                 {
                     chipFamily: "ESP32",
                     parts: [
-                        {
-                            path: "https://raw.githubusercontent.com/username/repo/main/bootloader.bin",
-                            offset: 4096,
-                        },
-                        {
-                            path: "https://raw.githubusercontent.com/username/repo/main/partitions.bin",
-                            offset: 32768,
-                        },
-                        {
-                            path: "https://raw.githubusercontent.com/username/repo/main/firmware.bin",
-                            offset: 65536,
-                        },
+                        { path: "https://raw.githubusercontent.com/username/repo/main/bootloader.bin", offset: 4096 },
+                        { path: "https://raw.githubusercontent.com/username/repo/main/partitions.bin", offset: 32768 },
+                        { path: "https://raw.githubusercontent.com/username/repo/main/firmware.bin", offset: 65536 },
                     ],
                 },
             ],
         };
+
         function logMessage(message) {
             const logArea = document.getElementById('log');
-            logArea.innerHTML += message + '<br>';
+            logArea.innerHTML += `<p class="mb-2">${message}</p>`;
             logArea.scrollTop = logArea.scrollHeight;
         }
         async function sendDataOverCOM(files) {
@@ -175,7 +181,6 @@
         }
         async function sendDataOverOTA(files) {
             if (!otaRXCharacteristic) {
-                console.error('OTA characteristic is not available.');
                 logMessage('OTA characteristic is not available.');
                 return;
             }
@@ -190,8 +195,7 @@
             await new Promise(resolve => setTimeout(resolve, 10000));
 
             const progressBar = document.getElementById('progressBar');
-            progressBar.value = 0;
-            progressBar.max = Math.ceil(firmwareData.byteLength / 500);
+            progressBar.style.width = '0%';
 
             for (let i = 0; i < firmwareData.byteLength; i += 500) {
                 const chunkSize = Math.min(500, firmwareData.byteLength - i);
@@ -207,20 +211,19 @@
                 await otaRXCharacteristic.writeValue(chunk);
 
                 partNumber++;
-                progressBar.value = partNumber;
-                logMessage(`Sent ${progressBar.value} of ${progressBar.max} chunks`);
+                const progress = Math.round((i + chunkSize) / firmwareData.byteLength * 100);
+                progressBar.style.width = `${progress}%`;
+                logMessage(`Sent ${partNumber} chunks (${progress}%)`);
             }
 
             await otaRXCharacteristic.writeValue(new Uint8Array([0x03]));
             logMessage('Device updated successfully over BLE');
         }
 
-
         document.getElementById('connectBtn').addEventListener('click', async () => {
             try {
                 bleDevice = await navigator.bluetooth.requestDevice({
                     filters: [
-                        { services: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'] },
                         { services: [0xae05] },
                     ],
                     optionalServices: ['fb1e4001-54ae-4a28-9f74-dfccb248601d']
@@ -278,18 +281,12 @@
             const password = document.getElementById('passwordInput').value;
 
             try {
-                const { data, error } = await supabaseClient.auth.signInWithPassword({
-                    email: email,
-                    password: password,
-                });
-
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                 if (error) throw error;
-
                 logMessage('Logged in successfully');
-                document.getElementById('loginBtn').disabled = true;
-                document.getElementById('emailInput').disabled = true;
-                document.getElementById('passwordInput').disabled = true;
-                document.getElementById('deviceSelect').disabled = false;
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('mainSection').classList.remove('hidden');
+                deviceSelect.disabled = false;
                 await populateDeviceList();
             } catch (error) {
                 console.error('Login error:', error);
@@ -301,11 +298,9 @@
             try {
                 const { data, error } = await supabaseClient
                     .from('bin_files')
-                    .select('device_name');
-
+                    .select('device_name')
+                    .eq('release_type', 'beta'); // Only fetch beta devices
                 if (error) throw error;
-
-                // Get unique device names and sort them
                 const uniqueDevices = [...new Set(data.map(item => item.device_name))];
                 return uniqueDevices.sort();
             } catch (error) {
@@ -314,48 +309,125 @@
                 throw error;
             }
         }
-        async function fetchFirmwareVersions(device, releaseType) {
+        async function fetchFirmwareVersions(device) {
             try {
                 const { data, error } = await supabaseClient
                     .from('bin_files')
-                    .select('version, created_at, file_path,firmware_name')
+                    .select('id, version, created_at, file_path, firmware_name, uploaded_by')
                     .eq('device_name', device)
-                    .eq('release_type', releaseType)
+                    .eq('release_type', 'beta')
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
 
-                return data.map(item => ({
-                    version: item.version,
-                    created_at: new Date(item.created_at).toLocaleString(),
-                    file_path: item.file_path,
-                    firmware_name: item.firmware_name
-                }));
+                currentFirmwares = data;
+                return data;
             } catch (error) {
                 console.error('Error fetching firmware versions:', error);
                 throw error;
             }
         }
 
-        async function populateFirmwareVersions(device, releaseType) {
-            const firmwareSelect = document.getElementById('firmwareSelect');
-            firmwareSelect.innerHTML = '<option value="">Select Firmware Version</option>';
-            firmwareSelect.disabled = true;
+        async function populateFirmwareTable(device) {
+            const firmwareTableBody = document.getElementById('firmwareTableBody');
+            firmwareTableBody.innerHTML = '';
 
             try {
-                const versions = await fetchFirmwareVersions(device, releaseType);
+                const versions = await fetchFirmwareVersions(device);
+                const { data: { user } } = await supabaseClient.auth.getUser();
+                const currentUserEmail = user ? user.email : null;
+
                 versions.forEach(version => {
-                    const option = document.createElement('option');
-                    option.value = version.file_path;
-                    option.textContent = `${version.version} ${version.firmware_name}`;
-                    firmwareSelect.appendChild(option);
+                    const row = firmwareTableBody.insertRow();
+                    row.className = 'firmware-row';
+                    const dateCell = row.insertCell(0);
+                    const nameCell = row.insertCell(1);
+                    const actionCell = row.insertCell(2);
+
+                    dateCell.className = 'py-2 px-4';
+                    nameCell.className = 'py-2 px-4';
+                    actionCell.className = 'py-2 px-4';
+
+                    dateCell.textContent = new Date(version.created_at).toLocaleString();
+                    nameCell.textContent = `${version.firmware_name}`;
+
+                    if (version.uploaded_by === currentUserEmail) {
+                        const deleteButton = document.createElement('button');
+                        deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i> Delete';
+                        deleteButton.className = 'bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded transition duration-300 ease-in-out';
+                        deleteButton.onclick = (e) => {
+                            e.stopPropagation();
+                            confirmDelete(version.id, version.firmware_name);
+                        };
+                        actionCell.appendChild(deleteButton);
+                    }
+
+
+
+
+                    row.addEventListener('click', () => {
+                        selectFirmware(version.file_path);
+                        // Remove 'selected' class from all rows
+                        firmwareTableBody.querySelectorAll('.firmware-row').forEach(r => r.classList.remove('selected'));
+                        // Add 'selected' class to the clicked row
+                        row.classList.add('selected');
+                    });
                 });
-                firmwareSelect.disabled = false;
             } catch (error) {
                 logMessage('Error loading firmware versions: ' + error.message);
             }
         }
+        function confirmDelete(firmwareId, firmwareName) {
+            if (confirm(`Are you sure you want to delete the firmware "${firmwareName}"? This action cannot be undone.`)) {
+                deleteFirmware(firmwareId);
+            }
+        }
 
+        // Update these functions to add/remove the 'btn-disabled' class
+        function disableButton(button) {
+            button.disabled = true;
+            button.classList.add('btn-disabled');
+        }
+
+        function enableButton(button) {
+            button.disabled = false;
+            button.classList.remove('btn-disabled');
+        }
+
+        async function deleteFirmware(firmwareId) {
+            try {
+                // Start a Supabase transaction
+                const { data, error } = await supabaseClient.rpc('delete_firmware', { firmware_id: firmwareId });
+
+                if (error) {
+                    if (error.code === '42501') {  // PostgreSQL error code for permission denied
+                        throw new Error('You do not have permission to delete this firmware.');
+                    }
+                    throw error;
+                }
+
+                if (data.success) {
+                    logMessage('Firmware and associated files deleted successfully');
+                    const deviceSelect = document.getElementById('deviceSelect');
+                    await populateFirmwareTable(deviceSelect.value);
+                } else {
+                    throw new Error('Failed to delete firmware: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error deleting firmware:', error);
+                logMessage('Error deleting firmware: ' + error.message);
+            }
+        }
+        async function selectFirmware(filePath) {
+            try {
+                await fetchFirmwareFile(filePath);
+                document.getElementById('connectBtn').disabled = false;
+                logMessage('Firmware selected. You can now connect to the device.');
+            } catch (error) {
+                logMessage('Error fetching firmware: ' + error.message);
+                console.error('Error details:', error);
+            }
+        }
         async function fetchFirmwareFile(filePath) {
             const fileNames = ['firmware.bin', 'partition.bin', 'bootloader.bin'];
             firmwareFiles = {};
@@ -365,16 +437,8 @@
                 console.log(`Fetching ${fullPath}`);
 
                 try {
-                    const { data, error } = await supabaseClient
-                        .storage
-                        .from('firmware-updates')
-                        .download(fullPath);
-
-                    if (error) {
-                        console.error(`Error fetching ${fileName}:`, error);
-                        throw error;
-                    }
-
+                    const { data, error } = await supabaseClient.storage.from('firmware-updates').download(fullPath);
+                    if (error) throw error;
                     firmwareFiles[fileName] = await data.arrayBuffer();
                     console.log(`Successfully fetched ${fileName}`);
                 } catch (error) {
@@ -382,10 +446,12 @@
                     throw new Error(`Failed to fetch ${fileName}: ${error.message}`);
                 }
             }
-            sendDataOverCOM(firmwareFiles);
+
+            // Enable connect button after successful file fetch
+            document.getElementById('connectBtn').disabled = false;
+            logMessage('Firmware files fetched successfully. You can now connect to the device.');
 
             return firmwareFiles;
-
         }
 
         async function populateDeviceList() {
@@ -405,155 +471,69 @@
         }
 
 
+        let currentUserId = null;
+        let currentFirmwares = [];
+
         async function initializeApp() {
             try {
-                // Initialize Supabase client
-                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                await initializeSupabase();
 
-                // Test the Supabase connection
-                const { data, error } = await supabaseClient.from('bin_files').select('id').limit(1);
-                if (error) throw error;
-                logMessage('Supabase connection established successfully');
+                // Get the current user's ID
+                const { data: { user } } = await supabaseClient.auth.getUser();
+                if (user) {
+                    currentUserId = user.id;
+                }
 
-                // Set up UI elements
                 const loginBtn = document.getElementById('loginBtn');
-                const emailInput = document.getElementById('emailInput');
-                const passwordInput = document.getElementById('passwordInput');
                 const deviceSelect = document.getElementById('deviceSelect');
-                const releaseTypeSelect = document.getElementById('releaseTypeSelect');
-                const firmwareSelect = document.getElementById('firmwareSelect');
                 const connectBtn = document.getElementById('connectBtn');
-                const sendBtn = document.getElementById('sendBtn');
-                const installButton = document.querySelector('esp-web-install-button');
 
-                // Login button event listener
                 loginBtn.addEventListener('click', login);
 
-                // Device select event listener
                 deviceSelect.addEventListener('change', async () => {
-                    releaseTypeSelect.disabled = !deviceSelect.value;
-                    firmwareSelect.innerHTML = '<option value="">Select Firmware Version</option>';
-                    firmwareSelect.disabled = true;
-                    connectBtn.disabled = true;
-                    sendBtn.disabled = true;
-                });
-
-                // Release type select event listener
-                document.getElementById('releaseTypeSelect').addEventListener('change', async () => {
-                    const deviceSelect = document.getElementById('deviceSelect');
-                    const releaseTypeSelect = document.getElementById('releaseTypeSelect');
-                    if (deviceSelect.value && releaseTypeSelect.value) {
-                        await populateFirmwareVersions(deviceSelect.value, releaseTypeSelect.value);
+                    if (deviceSelect.value) {
+                        await populateFirmwareTable(deviceSelect.value);
                     } else {
-                        document.getElementById('firmwareSelect').innerHTML = '<option value="">Select Firmware Version</option>';
-                        document.getElementById('firmwareSelect').disabled = true;
+                        document.getElementById('firmwareTableBody').innerHTML = '';
                     }
-                    document.getElementById('connectBtn').disabled = true;
-                    document.getElementById('sendBtn').disabled = true;
+                    connectBtn.disabled = true;
                 });
 
-                // Firmware select event listener
-                // firmwareSelect.addEventListener('change', () => {
-                document.getElementById('firmwareSelect').addEventListener('change', async () => {
-                    connectBtn.disabled = !firmwareSelect.value;
-                    sendBtn.disabled = true;
-                    const selectedFilePath = document.getElementById('firmwareSelect').value;
-                    console.log(selectedFilePath);
-                    if (!selectedFilePath) {
-                        logMessage('Please select a firmware version');
-                        return;
-                    }
 
-                    try {
-                        const firmwareData = await fetchFirmwareFile(selectedFilePath);
-                        logMessage('Firmware file fetched successfully');
-                        connectBtn.disabled = !firmwareSelect.value;
-                        sendBtn.disabled = true;
-                        // Implement sendDataOverOTA function
-                    } catch (error) {
-                        logMessage('Error updating firmware: ' + error.message);
-                        console.error('Error details:', error);
-                    }
+                connectBtn.addEventListener('click', connectBLE);
 
-                });
-
-                // Connect BLE button event listener
-                connectBtn.addEventListener('click', async () => {
-                    try {
-                        // Implement BLE connection logic here
-                        // For example:
-                        // await connectBLE();
-                        logMessage('Connected to BLE device');
-                        sendBtn.disabled = false;
-                    } catch (error) {
-                        logMessage('Error connecting to BLE device: ' + error.message);
-                    }
-                });
-
-                // Send (update) button event listener
-                document.getElementById('sendBtn').addEventListener('click', async () => {
-                    if (!firmwareFiles) {
-                        logMessage('Please select a firmware version');
-                        return;
-                    }
-                    logMessage('Firmware update started');
-                    await sendDataOverOTA(firmwareFiles);
-                    logMessage('Firmware update completed');
-
-                });
-
-                // ESP Web Install button event listeners
-                installButton.addEventListener('installation-started', () => {
-                    logMessage('Installation started...');
-                });
-                installButton.addEventListener('installation-finished', () => {
-                    logMessage('Installation finished successfully!');
-                });
-                installButton.addEventListener('error', (event) => {
-                    logMessage('Error: ' + event.detail.error);
-                });
-
-                // Set up auth state listener
                 supabaseClient.auth.onAuthStateChange((event, session) => {
                     if (event === 'SIGNED_IN') {
                         logMessage('User signed in');
-                        loginBtn.disabled = true;
-                        emailInput.disabled = true;
-                        passwordInput.disabled = true;
+                        document.getElementById('loginSection').classList.add('hidden');
+                        document.getElementById('mainSection').classList.remove('hidden');
                         deviceSelect.disabled = false;
                         populateDeviceList();
                     } else if (event === 'SIGNED_OUT') {
                         logMessage('User signed out');
-                        loginBtn.disabled = false;
-                        emailInput.disabled = false;
-                        passwordInput.disabled = false;
+                        document.getElementById('loginSection').classList.remove('hidden');
+                        document.getElementById('mainSection').classList.add('hidden');
                         deviceSelect.disabled = true;
-                        releaseTypeSelect.disabled = true;
                         firmwareSelect.disabled = true;
                         connectBtn.disabled = true;
-                        sendBtn.disabled = true;
                     }
                 });
 
-                // Check for Web Bluetooth support
                 if (!navigator.bluetooth) {
                     logMessage('Web Bluetooth is not supported in this browser. Please use a compatible browser like Chrome or Edge.');
                     connectBtn.disabled = true;
                 }
 
-                // Check for Web Serial support
                 if (!navigator.serial) {
                     logMessage('Web Serial is not supported in this browser. Please use a compatible browser like Chrome or Edge.');
                     document.querySelector('esp-web-install-button button').disabled = true;
                 }
 
-                // Check if user is already logged in
                 const { data: { session } } = await supabaseClient.auth.getSession();
                 if (session) {
                     logMessage('User is already logged in');
-                    loginBtn.disabled = true;
-                    emailInput.disabled = true;
-                    passwordInput.disabled = true;
+                    document.getElementById('loginSection').classList.add('hidden');
+                    document.getElementById('mainSection').classList.remove('hidden');
                     deviceSelect.disabled = false;
                     await populateDeviceList();
                 }
@@ -564,8 +544,34 @@
                 logMessage('Error initializing app: ' + error.message);
             }
         }
+        async function connectBLE() {
+            try {
+                bleDevice = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { services: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'] },
+                        { services: [0xae05] },
+                    ],
+                    optionalServices: ['fb1e4001-54ae-4a28-9f74-dfccb248601d']
+                });
 
-        // Call initializeApp when the DOM is fully loaded
+                bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                const server = await bleDevice.gatt.connect();
+                const optionalService = await server.getPrimaryService('fb1e4001-54ae-4a28-9f74-dfccb248601d');
+                otaRXCharacteristic = await optionalService.getCharacteristic('fb1e4002-54ae-4a28-9f74-dfccb248601d');
+                logMessage('Connected to BLE device.');
+
+                // Wait for 2 seconds before starting file transfer
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Start sending file over BLE
+                await sendDataOverOTA(firmwareFiles);
+            } catch (error) {
+                console.error('Error connecting to BLE device:', error);
+                logMessage('Error connecting to BLE device: ' + error.message);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', initializeApp);
     </script>
 </body>
