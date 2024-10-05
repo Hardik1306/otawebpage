@@ -19,7 +19,7 @@
         }
 
         .firmware-row.selected {
-            background-color: rgba(75, 85, 99, 0.8);
+            background-color: rgba(133, 179, 243, 0.8);
         }
 
         button:disabled {
@@ -54,6 +54,12 @@
             <select id="deviceSelect" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-gray-200"
                 disabled>
                 <option value="">Select Device</option>
+            </select>
+            <select id="versionSelect" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-gray-200"
+                disabled>
+                <option value="">Select Version</option>
+                <option value="main">Main</option>
+                <option value="beta">Beta</option>
             </select>
             <div id="firmwareTableContainer" class="overflow-x-auto">
                 <table id="firmwareTable" class="min-w-full bg-gray-800 text-gray-200">
@@ -99,10 +105,13 @@
         let otaRXCharacteristic;
         let logArea = document.getElementById('log');
         let deviceSelect = document.getElementById('deviceSelect');
-        let firmwareSelect = document.getElementById('firmwareSelect');
+        let versionSelect = document.getElementById('versionSelect');
         let connectBtn = document.getElementById('connectBtn');
         const installButton = document.querySelector('esp-web-install-button');
         let firmwareFiles = {};
+        let currentUserId = null;
+        let currentFirmwares = [];
+
         let espcomjson = {
             name: "ESP32 GitHub-hosted Firmware",
             version: "1.0.0",
@@ -124,9 +133,9 @@
             logArea.innerHTML += `<p class="mb-2">${message}</p>`;
             logArea.scrollTop = logArea.scrollHeight;
         }
+
         async function sendDataOverCOM(files) {
             try {
-                // Reset the builds array
                 espcomjson.builds = [
                     {
                         chipFamily: "ESP32",
@@ -136,11 +145,9 @@
 
                 for (const [fileName, fileData] of Object.entries(files)) {
                     if (["partition.bin", "firmware.bin", "bootloader.bin"].includes(fileName)) {
-                        // Create a blob URL for each file
                         const blob = new Blob([fileData], { type: 'application/octet-stream' });
                         const blobUrl = URL.createObjectURL(blob);
 
-                        // Add the file to the parts array with the correct offset
                         espcomjson.builds[0].parts.push({
                             path: blobUrl,
                             offset: getOffset(fileName),
@@ -179,6 +186,7 @@
                     return 0;
             }
         }
+
         async function sendDataOverOTA(files) {
             if (!otaRXCharacteristic) {
                 logMessage('OTA characteristic is not available.');
@@ -220,46 +228,10 @@
             logMessage('Device updated successfully over BLE');
         }
 
-        document.getElementById('connectBtn').addEventListener('click', async () => {
-            try {
-                bleDevice = await navigator.bluetooth.requestDevice({
-                    filters: [
-                        { services: [0xae05] },
-                    ],
-                    optionalServices: ['fb1e4001-54ae-4a28-9f74-dfccb248601d']
-                });
-
-                bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
-
-                const server = await bleDevice.gatt.connect();
-                const optionalService = await server.getPrimaryService('fb1e4001-54ae-4a28-9f74-dfccb248601d');
-                otaRXCharacteristic = await optionalService.getCharacteristic('fb1e4002-54ae-4a28-9f74-dfccb248601d');
-                logMessage('Connected to device.');
-                await populateDeviceList();
-            } catch (error) {
-                console.error('Error connecting to BLE device:', error);
-                logMessage('Error connecting to BLE device: ' + error.message);
-            }
-        });
-
-        function onDisconnected() {
-            bleDevice = null;
-            otaRXCharacteristic = null;
-            deviceSelect.disabled = true;
-            firmwareSelect.disabled = true;
-            sendBtn.disabled = true;
-            logMessage('Disconnected from BLE device.');
-        }
-
-
-
-
-
         async function initializeSupabase() {
             try {
                 supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-                // Test the connection
                 const { data, error } = await supabaseClient.from('bin_files').select('id').limit(1);
 
                 if (error) throw error;
@@ -271,10 +243,6 @@
                 throw error;
             }
         }
-
-
-
-
 
         async function login() {
             const email = document.getElementById('emailInput').value;
@@ -299,7 +267,7 @@
                 const { data, error } = await supabaseClient
                     .from('bin_files')
                     .select('device_name')
-                    .eq('release_type', 'beta'); // Only fetch beta devices
+                    .order('device_name');
                 if (error) throw error;
                 const uniqueDevices = [...new Set(data.map(item => item.device_name))];
                 return uniqueDevices.sort();
@@ -309,13 +277,31 @@
                 throw error;
             }
         }
-        async function fetchFirmwareVersions(device) {
+
+        async function fetchVersions(device) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('bin_files')
+                    .select('release_type')
+                    .eq('device_name', device)
+                    .order('release_type');
+                if (error) throw error;
+                const uniqueVersions = [...new Set(data.map(item => item.release_type))];
+                return uniqueVersions;
+            } catch (error) {
+                console.error('Error fetching versions:', error);
+                logMessage('Error fetching versions: ' + error.message);
+                throw error;
+            }
+        }
+
+        async function fetchFirmwareVersions(device, version) {
             try {
                 const { data, error } = await supabaseClient
                     .from('bin_files')
                     .select('id, version, created_at, file_path, firmware_name, uploaded_by')
                     .eq('device_name', device)
-                    .eq('release_type', 'beta')
+                    .eq('release_type', version)
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
@@ -328,62 +314,76 @@
             }
         }
 
-        async function populateFirmwareTable(device) {
+        async function populateVersionSelect(device) {
+            const versionSelect = document.getElementById('versionSelect');
+            versionSelect.innerHTML = '<option value="">Select Version</option>';
+            versionSelect.disabled = true;
+
+            if (device) {
+                const versions = await fetchVersions(device);
+                versions.forEach(version => {
+                    const option = document.createElement('option');
+                    option.value = version;
+                    option.textContent = version.charAt(0).toUpperCase() + version.slice(1);
+                    versionSelect.appendChild(option);
+                });
+                versionSelect.disabled = false;
+            }
+        }
+
+        async function populateFirmwareTable(device, version) {
             const firmwareTableBody = document.getElementById('firmwareTableBody');
             firmwareTableBody.innerHTML = '';
 
-            try {
-                const versions = await fetchFirmwareVersions(device);
-                const { data: { user } } = await supabaseClient.auth.getUser();
-                const currentUserEmail = user ? user.email : null;
+            if (device && version) {
+                try {
+                    const versions = await fetchFirmwareVersions(device, version);
+                    const { data: { user } } = await supabaseClient.auth.getUser();
+                    const currentUserEmail = user ? user.email : null;
 
-                versions.forEach(version => {
-                    const row = firmwareTableBody.insertRow();
-                    row.className = 'firmware-row';
-                    const dateCell = row.insertCell(0);
-                    const nameCell = row.insertCell(1);
-                    const actionCell = row.insertCell(2);
+                    versions.forEach(version => {
+                        const row = firmwareTableBody.insertRow();
+                        row.className = 'firmware-row';
+                        const dateCell = row.insertCell(0);
+                        const nameCell = row.insertCell(1);
+                        const actionCell = row.insertCell(2);
 
-                    dateCell.className = 'py-2 px-4';
-                    nameCell.className = 'py-2 px-4';
-                    actionCell.className = 'py-2 px-4';
+                        dateCell.className = 'py-2 px-4';
+                        nameCell.className = 'py-2 px-4';
+                        actionCell.className = 'py-2 px-4';
 
-                    dateCell.textContent = new Date(version.created_at).toLocaleString();
-                    nameCell.textContent = `${version.firmware_name}`;
+                        dateCell.textContent = new Date(version.created_at).toLocaleString();
+                        nameCell.textContent = `${version.firmware_name}`;
 
-                    if (version.uploaded_by === currentUserEmail) {
-                        const deleteButton = document.createElement('button');
-                        deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i> Delete';
-                        deleteButton.className = 'bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded transition duration-300 ease-in-out';
-                        deleteButton.onclick = (e) => {
-                            e.stopPropagation();
-                            confirmDelete(version.id, version.firmware_name);
-                        };
-                        actionCell.appendChild(deleteButton);
-                    }
+                        if (version.uploaded_by === currentUserEmail) {
+                            const deleteButton = document.createElement('button');
+                            deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i> Delete';
+                            deleteButton.className = 'bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded transition duration-300 ease-in-out';
+                            deleteButton.onclick = (e) => {
+                                e.stopPropagation();
+                                confirmDelete(version.id, version.firmware_name);
+                            };
+                            actionCell.appendChild(deleteButton);
+                        }
 
-
-
-
-                    row.addEventListener('click', () => {
-                        selectFirmware(version.file_path);
-                        // Remove 'selected' class from all rows
-                        firmwareTableBody.querySelectorAll('.firmware-row').forEach(r => r.classList.remove('selected'));
-                        // Add 'selected' class to the clicked row
-                        row.classList.add('selected');
+                        row.addEventListener('click', () => {
+                            selectFirmware(version.file_path);
+                            firmwareTableBody.querySelectorAll('.firmware-row').forEach(r => r.classList.remove('selected'));
+                            row.classList.add('selected');
+                        });
                     });
-                });
-            } catch (error) {
-                logMessage('Error loading firmware versions: ' + error.message);
+                } catch (error) {
+                    logMessage('Error loading firmware versions: ' + error.message);
+                }
             }
         }
+
         function confirmDelete(firmwareId, firmwareName) {
             if (confirm(`Are you sure you want to delete the firmware "${firmwareName}"? This action cannot be undone.`)) {
                 deleteFirmware(firmwareId);
             }
         }
 
-        // Update these functions to add/remove the 'btn-disabled' class
         function disableButton(button) {
             button.disabled = true;
             button.classList.add('btn-disabled');
@@ -396,11 +396,10 @@
 
         async function deleteFirmware(firmwareId) {
             try {
-                // Start a Supabase transaction
                 const { data, error } = await supabaseClient.rpc('delete_firmware', { firmware_id: firmwareId });
 
                 if (error) {
-                    if (error.code === '42501') {  // PostgreSQL error code for permission denied
+                    if (error.code === '42501') {
                         throw new Error('You do not have permission to delete this firmware.');
                     }
                     throw error;
@@ -409,7 +408,8 @@
                 if (data.success) {
                     logMessage('Firmware and associated files deleted successfully');
                     const deviceSelect = document.getElementById('deviceSelect');
-                    await populateFirmwareTable(deviceSelect.value);
+                    const versionSelect = document.getElementById('versionSelect');
+                    await populateFirmwareTable(deviceSelect.value, versionSelect.value);
                 } else {
                     throw new Error('Failed to delete firmware: ' + data.message);
                 }
@@ -418,16 +418,31 @@
                 logMessage('Error deleting firmware: ' + error.message);
             }
         }
+
+        let currentSelectedFilePath = null;
+
         async function selectFirmware(filePath) {
             try {
-                await fetchFirmwareFile(filePath);
-                document.getElementById('connectBtn').disabled = false;
-                logMessage('Firmware selected. You can now connect to the device.');
+                if (currentSelectedFilePath !== filePath) {
+                    // Disable the connect button while fetching new firmware
+                    disableButton(document.getElementById('connectBtn'));
+                    logMessage('Fetching new firmware files. Please wait...');
+
+                    await fetchFirmwareFile(filePath);
+                    currentSelectedFilePath = filePath;
+
+                    enableButton(document.getElementById('connectBtn'));
+                    logMessage('New firmware selected and downloaded. You can now connect to the device.');
+                } else {
+                    logMessage('This firmware is already selected and downloaded.');
+                }
             } catch (error) {
                 logMessage('Error fetching firmware: ' + error.message);
                 console.error('Error details:', error);
+                disableButton(document.getElementById('connectBtn'));
             }
         }
+
         async function fetchFirmwareFile(filePath) {
             const fileNames = ['firmware.bin', 'partition.bin', 'bootloader.bin'];
             firmwareFiles = {};
@@ -447,10 +462,7 @@
                 }
             }
 
-            // Enable connect button after successful file fetch
-            document.getElementById('connectBtn').disabled = false;
-            logMessage('Firmware files fetched successfully. You can now connect to the device.');
-
+            logMessage('Firmware files fetched successfully.');
             return firmwareFiles;
         }
 
@@ -470,15 +482,10 @@
             }
         }
 
-
-        let currentUserId = null;
-        let currentFirmwares = [];
-
         async function initializeApp() {
             try {
                 await initializeSupabase();
 
-                // Get the current user's ID
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (user) {
                     currentUserId = user.id;
@@ -486,19 +493,25 @@
 
                 const loginBtn = document.getElementById('loginBtn');
                 const deviceSelect = document.getElementById('deviceSelect');
+                const versionSelect = document.getElementById('versionSelect');
                 const connectBtn = document.getElementById('connectBtn');
 
                 loginBtn.addEventListener('click', login);
 
                 deviceSelect.addEventListener('change', async () => {
-                    if (deviceSelect.value) {
-                        await populateFirmwareTable(deviceSelect.value);
+                    await populateVersionSelect(deviceSelect.value);
+                    document.getElementById('firmwareTableBody').innerHTML = '';
+                    connectBtn.disabled = true;
+                });
+
+                versionSelect.addEventListener('change', async () => {
+                    if (deviceSelect.value && versionSelect.value) {
+                        await populateFirmwareTable(deviceSelect.value, versionSelect.value);
                     } else {
                         document.getElementById('firmwareTableBody').innerHTML = '';
                     }
                     connectBtn.disabled = true;
                 });
-
 
                 connectBtn.addEventListener('click', connectBLE);
 
@@ -514,7 +527,7 @@
                         document.getElementById('loginSection').classList.remove('hidden');
                         document.getElementById('mainSection').classList.add('hidden');
                         deviceSelect.disabled = true;
-                        firmwareSelect.disabled = true;
+                        versionSelect.disabled = true;
                         connectBtn.disabled = true;
                     }
                 });
@@ -544,6 +557,7 @@
                 logMessage('Error initializing app: ' + error.message);
             }
         }
+
         async function connectBLE() {
             try {
                 bleDevice = await navigator.bluetooth.requestDevice({
@@ -572,7 +586,27 @@
             }
         }
 
+        function onDisconnected() {
+            bleDevice = null;
+            otaRXCharacteristic = null;
+            deviceSelect.disabled = false;
+            versionSelect.disabled = false;
+            connectBtn.disabled = true;
+            logMessage('Disconnected from BLE device.');
+        }
+
         document.addEventListener('DOMContentLoaded', initializeApp);
+
+        // Add event listener for the ESP Web Install button
+        document.querySelector('esp-web-install-button').addEventListener('click', async () => {
+            try {
+                await sendDataOverCOM(firmwareFiles);
+                logMessage('COM upload initiated. Please follow the prompts in the ESP Web Install window.');
+            } catch (error) {
+                console.error('Error initiating COM upload:', error);
+                logMessage('Error initiating COM upload: ' + error.message);
+            }
+        });
     </script>
 </body>
 
